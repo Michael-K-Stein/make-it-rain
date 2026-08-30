@@ -74,16 +74,21 @@ All 15 currently pass.
 
 ## Partially addressed
 
-### 14. Device coverage — improved, not complete
-Compiles clean (no errors, no warnings) and launches without a runtime error on
-both `venu2` (416×416 round) and `vivoactive5` (260×260 round) — the smallest
-screen available in the local SDK install — so the fractional layout survives a
-meaningfully smaller display. `venu2s`, `venu3`, `venu3s`, `venusq2`,
-`venusq2m`, `fr265`, and `fr965` device profiles aren't downloaded in this SDK
-install and remain unchecked; `venusq2` in particular is square, not round, and
-has not been visually verified at all. No screenshot tooling was available in
-this environment to confirm layout by eye on any device — "no runtime error"
-is not the same as "nothing overlaps."
+### 14. Device coverage — mostly done
+`tools/make_device_json.py` reads device configs straight out of the SDK's own
+`devices.xml` (bundled in `monkeybrains.jar`), so it no longer depends on the
+SDK Manager's per-device downloads. `tools/package.sh` now builds and packages
+all 11 products from `manifest.xml` (19 firmware part numbers) into one `.iq`
+with zero errors, and `tools/build.sh`'s default set (`venu2`, `venu2s`,
+`vivoactive5`) compiles clean with no errors or warnings beyond the usual
+type-inference notices. `tools/check_layout.py` additionally checks the
+fractional layout against three round sizes (416/360/260px) on every
+`verify.sh` run — it caught and fixed a real bezel-clipping bug in
+`StatsView`'s prestige/confirm buttons before this shipped. Still open: no
+screenshot tooling was available in this environment, so nothing has been
+visually confirmed on an actual rendered screen, round *or* square — `venusq2`
+in particular is not round, and the chord-width layout check doesn't model a
+square display at all.
 
 ### 17. Interactive verification — improved, not complete
 The app now launches cleanly in the simulator on two device profiles with no
@@ -113,3 +118,14 @@ Still a generated flat green circle. Needs real art, not more code.
 `MainDelegate.onSwipe`'s device-without-drag-coordinates fallback and its 400ms
 de-duplication window against `onDrag` are unchanged and still unvalidated on
 real hardware.
+
+### 18. Strict type checking (`--typecheck 3`) doesn't pass
+`tools/build.sh` and `tools/package.sh` run at `--typecheck 1` ("gradual") by
+default — the level the old `monkeyc.bat` wrapper used implicitly. Level 3
+("strict") surfaces ~50 errors across `UpgradeView.mc`, `StatsView.mc` and
+`AutomationView.mc`: untyped member variables, untyped function parameters and
+returns, and a few call sites the strict checker can't resolve without them.
+None of it is a real bug — `tools/verify.sh`'s economy/layout checks and the
+unit test suite all pass — but the code isn't annotated finely enough for the
+strictest setting. Fixing it means adding `as Type` to every method signature
+and member declaration across the view/delegate classes.

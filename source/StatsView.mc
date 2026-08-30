@@ -87,9 +87,9 @@ class StatsView extends WatchUi.View {
         if (flash > 0) { color = Theme.CASH; }
         dc.setColor(color, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(3);
-        var bx = w * 0.14;
+        var bx = w * 0.18;
         var by = h * 0.68;
-        var bw = w * 0.72;
+        var bw = w * 0.64;
         var bh = h * 0.16;
         dc.drawRoundedRectangle(bx, by, bw, bh, 12);
         var label = ready
@@ -121,8 +121,12 @@ class StatsView extends WatchUi.View {
 
         dc.setColor(Theme.CRIT, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(3);
-        dc.drawRoundedRectangle(w * 0.18, h * 0.75, w * 0.64, h * 0.14, 12);
-        dc.drawText(w / 2, h * 0.75 + h * 0.07, Graphics.FONT_SMALL, "TAP TO CONFIRM",
+        var cbx = w * 0.22;
+        var cby = h * 0.72;
+        var cbw = w * 0.56;
+        var cbh = h * 0.12;
+        dc.drawRoundedRectangle(cbx, cby, cbw, cbh, 12);
+        dc.drawText(w / 2, cby + cbh / 2, Graphics.FONT_SMALL, "TAP TO CONFIRM",
                     Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         dc.setPenWidth(1);
     }

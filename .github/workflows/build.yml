@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache the Connect IQ SDK
+        uses: actions/cache@v4
+        with:
+          path: dist/sdk
+          key: connectiq-sdk-${{ hashFiles('tools/build.sh') }}
+
+      - name: Check the code against its own invariants
+        run: tools/verify.sh
+
+      - name: Build for the default device set
+        run: tools/build.sh --fetch-sdk
+
+      - name: Compile the unit tests
+        run: |
+          java -jar dist/sdk/bin/monkeybrains.jar \
+            --jungles tests.jungle \
+            --output dist/tests.prg \
+            --apidb dist/sdk/bin/api.db \
+            --apimir dist/sdk/bin/api.mir \
+            --override-devices-json dist/devices \
+            --device venu2 \
+            --private-key dist/developer_key.der \
+            --unit-test \
+            --warn
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: make-it-rain-prg
+          path: dist/*.prg
+          if-no-files-found: error

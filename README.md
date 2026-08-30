@@ -4,25 +4,46 @@ A minimalist idle game for Garmin touchscreen watches. Swipe down to make money.
 
 ## Build
 
-Requires the Connect IQ SDK (tested with 9.2.0) and a developer key.
+Needs `java` and `python3`. Point at an existing SDK, or let the tooling fetch one:
 
 ```sh
-openssl genrsa -out bin/dev_key.pem 4096
-openssl pkcs8 -topk8 -inform PEM -outform DER -in bin/dev_key.pem -out bin/developer_key.der -nocrypt
-
-monkeyc -f monkey.jungle -o bin/MakeItRain.prg -y bin/developer_key.der -d venu2
-monkeydo bin/MakeItRain.prg venu2      # with the simulator running
+tools/verify.sh                    # fast checks, no SDK needed
+tools/build.sh --fetch-sdk         # -> dist/MakeItRain-<device>.prg (sideload)
+tools/package.sh --fetch-sdk       # -> dist/MakeItRain.iq (every product, store-ready)
 ```
 
-Device profiles listed in `manifest.xml` that you have not downloaded in the SDK
-Manager produce "invalid device id" warnings; they are harmless for other targets.
+Or point at an SDK you already have (from the graphical SDK Manager or otherwise):
+
+```sh
+CIQ_SDK=~/connectiq-sdk tools/build.sh venu2
+```
+
+Device configurations are generated straight from the SDK's own device table
+(`tools/make_device_json.py`), not from the SDK Manager's per-device
+downloads — so `tools/build.sh` and `tools/package.sh` can target any device
+the SDK knows about, including ones you've never opened the Manager for.
+`tools/build.sh`'s default set is `venu2 venu2s vivoactive5`; `tools/package.sh`
+packages every product in `manifest.xml` into one `.iq`.
+
+A developer key is required to sign anything. `tools/build.sh` generates a
+throwaway one at `dist/developer_key.der` if none exists — fine for
+sideloading, but the store binds an app to whichever key first uploaded it, so
+`tools/package.sh` refuses to invent one; point `CIQ_KEY` at your real key.
 
 ### Tests
 
 ```sh
-monkeyc -f tests.jungle -o bin/tests.prg -y bin/developer_key.der -d venu2 -t
-monkeydo bin/tests.prg venu2 /t        # with the simulator running
+monkeyc -f tests.jungle -o dist/tests.prg -y dist/developer_key.der -d venu2 -t
+monkeydo dist/tests.prg venu2 /t       # with the simulator running
 ```
+
+### CI
+
+`.github/workflows/build.yml` runs `tools/verify.sh`, `tools/build.sh --fetch-sdk`,
+and the unit tests on every push. `.github/workflows/release.yml` additionally
+packages and publishes a GitHub release when a `v*` tag is pushed — set the
+`CIQ_DEVELOPER_KEY` repo secret to your key, base64-encoded
+(`base64 -w0 dist/developer_key.der`), first.
 
 ## Controls
 
@@ -56,6 +77,20 @@ can never trigger it.
 | `source/Format.mc` | Compact currency formatting ($12.4K) |
 | `source/Theme.mc` | Palette |
 | `tests/` | Unit tests (`monkeyc -t`), not part of the shipped app |
+| `tools/` | Build/verify/package scripts and their Python helpers (see below) |
+
+### Tools
+
+| File | Role |
+| --- | --- |
+| `tools/build.sh` | Fetches the SDK if asked, builds `.prg` per device for sideloading |
+| `tools/package.sh` | Builds the store-ready `.iq` covering every manifest product |
+| `tools/verify.sh` | The no-SDK-needed fast gate: constants, layout, economy smoke test |
+| `tools/make_device_json.py` | Device configs straight from the SDK jar — no SDK Manager needed |
+| `tools/make_icon.py` | Generates `resources/drawables/launcher_icon.png` (not committed) |
+| `tools/check_constants.py` | Fails if `GameState.mc` and `simulate_economy.py` drift apart |
+| `tools/check_layout.py` | Fails if a button/text row would clip a round display's bezel |
+| `tools/simulate_economy.py` | Plays the game fast — greedy buyer — to sanity-check pacing |
 
 ## Economy
 
