@@ -46,6 +46,15 @@ class UpgradeView extends WatchUi.View {
         return ok;
     }
 
+    // Long-press: buy every level the current cash affords in one go.
+    function buyMax() {
+        var n = (card == CARD_SWIPE) ? $.gGame.buyMaxSwipeUpgrade()
+                                     : $.gGame.buyMaxCritUpgrade();
+        flash = (n > 0) ? 5 : -5;
+        WatchUi.requestUpdate();
+        return n;
+    }
+
     function onUpdate(dc) {
         var w = dc.getWidth();
         var h = dc.getHeight();
@@ -53,6 +62,11 @@ class UpgradeView extends WatchUi.View {
 
         dc.setColor(Theme.BG, Theme.BG);
         dc.clear();
+
+        if (card == CARD_CRIT && !g.critUnlocked()) {
+            drawLocked(dc, w, h);
+            return;
+        }
 
         var title, fromTo, cost, affordable;
         if (card == CARD_SWIPE) {
@@ -96,6 +110,18 @@ class UpgradeView extends WatchUi.View {
         dc.setPenWidth(1);
 
         dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.87, Graphics.FONT_XTINY, "hold to buy max",
+                    Graphics.TEXT_JUSTIFY_CENTER);
+    }
+
+    hidden function drawLocked(dc, w, h) {
+        dc.setColor(Theme.LOCKED, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.42, Graphics.FONT_TINY, "MEGA SWIPE",
+                    Graphics.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.55, Graphics.FONT_XTINY,
+                    "unlocks at " + Format.cash(GameState.MILESTONES[GameState.CRIT_UNLOCK_MILESTONE_IDX - 1]),
+                    Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(w / 2, h * 0.87, Graphics.FONT_XTINY, "swipe up for more",
                     Graphics.TEXT_JUSTIFY_CENTER);
     }
@@ -117,6 +143,12 @@ class UpgradeDelegate extends WatchUi.BehaviorDelegate {
 
     function onSelect() {
         view.buy();
+        return true;
+    }
+
+    // A held tap buys every affordable level at once instead of one.
+    function onHold(evt) {
+        view.buyMax();
         return true;
     }
 

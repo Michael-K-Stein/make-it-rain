@@ -1,90 +1,115 @@
 # Backlog
 
-Everything the spec describes that the MVP deliberately leaves out, plus gaps
-found while building. One entry per issue, ready to be filed as GitHub issues.
+Status of every item raised after the MVP (github.com/Michael-K-Stein/make-it-rain,
+issues #1–#17). Implemented items note what shipped and what's still unverified.
 
-## Deferred by the spec (§14, §20)
+## Implemented
 
-### 1. Prestige system
-Spec §14. Reset cash and upgrades at a major milestone for a permanent earnings
-multiplier. `prestigeLevel` is named in the §16 save list but is not yet a field
-on `GameState`; adding it is a save-format change (see #12).
+### 1. Prestige system — done
+`GameState.doPrestige()` resets cash/swipe/auto/crit levels once
+`lifetimeCash >= PRESTIGE_REQUIREMENT` ($1M), grants a permanent +100%/level
+earnings multiplier (`prestigeMultiplier()`, applied in `cashPerSwipe()` and
+`passiveIncome()`), and keeps lifetime stats. Reached from the new Stats screen.
+Save format bumped to v2 (`"prestige"` field); see #12.
 
-### 2. Stats / progression screen
-Spec §8 maps a right-edge swipe to Stats. The gesture is currently unbound.
-`GameState` already tracks `lifetimeCash` and `totalSwipes` for it.
+### 2. Stats / progression screen — done
+`StatsView`/`StatsDelegate`. Reached by swiping down from the top strip of the
+money screen. Shows lifetime cash, total swipes, prestige level/multiplier, and
+the prestige action with a confirm step.
 
-### 3. Milestone-gated upgrade unlocks
-Spec §13 shows "NEW UPGRADE UNLOCKED" on a milestone. Milestones currently only
-trigger a celebration; no upgrade is gated behind them, so both upgrade cards
-are available from the first second.
+### 3. Milestone-gated upgrade unlocks — done
+Mega Swipe (crit) is locked until the first milestone ($1,000) is crossed
+(`GameState.critUnlocked()`). The upgrade card shows a "LOCKED — unlocks at $1K"
+state instead of a buyable card until then.
 
-## Gaps in what was built
+### 4. Sound feedback — done
+`MainView.tone()` calls `Attention.playTone` on a normal swipe, a mega swipe,
+and a milestone, wrapped in the same has/try pattern as the existing vibration
+code so it's silently a no-op where unsupported. No mute setting was added —
+still relies on the watch's own DND/vibration settings.
 
-### 4. No sound feedback
-Spec §21 asks for "visual/audio/haptic" feedback. Haptics and visuals are done;
-`Attention.playTone` is not wired up, and there is no user setting to mute it.
+### 5. Swipe hint fades out — done
+`MainView` hides the chevron hint once `totalSwipes >= HINT_TEACH_SWIPES` (4),
+and brings it back after ~30s of no interaction (`HINT_RETURN_IDLE_FRAMES`).
 
-### 5. Swipe hint never adapts to the player
-`MainView.drawSwipeHint` always draws the same three chevrons. It should fade out
-once the player has clearly understood the mechanic (e.g. after N swipes) to free
-the screen, and reappear after a long absence.
+### 6. Affordability cue — done
+`drawEdgeHints` colors the "U"/"A" edge-hint letters `Theme.ACCENT` instead of
+`Theme.MUTED` whenever anything on that screen is affordable.
 
-### 6. Upgrade screen shows only one upgrade at a time with no affordability cue
-You have to cycle to the second card to discover it, and nothing on the money
-screen signals "you can afford an upgrade right now" — a core idle-game pull.
-Suggest a small accent dot on the right edge hint when anything is affordable.
+### 7. Buy-max / hold-to-buy — done, one caveat
+Holding the buy button (`onHold`) buys every level the current cash affords in
+one shot (`GameState.buyMaxSwipeUpgrade/buyMaxAutoUpgrade/buyMaxCritUpgrade`,
+capped at `MAX_BUY_STEPS` to bound the loop). **Not verified**: whether a
+release-after-hold also fires `onTap` on this SDK/device, which would trigger an
+extra single-level buy immediately after the max-buy. Needs an interactive check
+(see #17).
 
-### 7. Buy-max / hold-to-buy
-Late game, levelling from 30 to 40 costs 10 separate taps. Add repeat-buy on a
-long press, or a "buy x10" affordance.
+### 9. Passive income now accrues app-wide — done
+Moved off `MainView`'s per-frame timer onto a `Timer.Timer` owned by
+`MakeItRainApp` (`onTick`, 1s interval), so it keeps running regardless of which
+view is on screen, including Upgrades/Automation/Stats.
+
+### 11. Autosave is time-based — done
+Folded into the same `MakeItRainApp.onTick`: saves every `SAVE_EVERY_TICKS` (20)
+real-second ticks instead of counting animation frames.
+
+### 12. Save migration — done
+`SAVE_VERSION` bumped to 2 for the new `prestige` field. `load()`'s per-field
+`pick()` fallback means a v1 save (no `"prestige"` key) loads cleanly with
+`prestigeLevel = 0`; a save from a *future* version is still rejected outright
+rather than partially trusted. Covered by `testPrestigeResetsRunButKeepsLifetimeStats`
+et al. in `tests/GameStateTest.mc`, though there's no literal "load an old-format
+blob" test — it relies on the field being genuinely optional.
+
+### 13. Automated tests — done
+`tests/FormatTest.mc` and `tests/GameStateTest.mc`, 15 cases covering compact
+number formatting (including the trailing-zero stripping and a tier-boundary
+rounding case), cost-curve growth, prestige gating/reset, crit unlock/cap,
+streak tiers, and buy-max spend accounting. Build with:
+```sh
+monkeyc -f tests.jungle -o bin/tests.prg -y bin/developer_key.der -d venu2 -t
+monkeydo bin/tests.prg venu2 /t     # simulator must be running
+```
+All 15 currently pass.
+
+## Partially addressed
+
+### 14. Device coverage — improved, not complete
+Compiles clean (no errors, no warnings) and launches without a runtime error on
+both `venu2` (416×416 round) and `vivoactive5` (260×260 round) — the smallest
+screen available in the local SDK install — so the fractional layout survives a
+meaningfully smaller display. `venu2s`, `venu3`, `venu3s`, `venusq2`,
+`venusq2m`, `fr265`, and `fr965` device profiles aren't downloaded in this SDK
+install and remain unchecked; `venusq2` in particular is square, not round, and
+has not been visually verified at all. No screenshot tooling was available in
+this environment to confirm layout by eye on any device — "no runtime error"
+is not the same as "nothing overlaps."
+
+### 17. Interactive verification — improved, not complete
+The app now launches cleanly in the simulator on two device profiles with no
+runtime error. Gesture, purchase, prestige-confirm, and offline-claim flows
+have still not been exercised — there was no way to script simulated touch
+input from this environment. Needs a manual pass on the simulator or hardware.
+
+## Still open, unchanged
 
 ### 8. Number precision ceiling
-`GameState` stores cash as a `Double`. Beyond ~1e15 the integer part loses
-precision and `Format.num` has suffixes only up to `Oc` (1e27). Fine for the MVP
-horizon; needs a mantissa/exponent representation for a real prestige loop.
-
-### 9. Passive income accrues only while the app is open or via the offline claim
-`MainView.onFrame` drives accrual at 25 fps while the money screen is showing.
-The upgrade and automation screens do not accrue (their timers only repaint), so
-sitting on the automation screen silently pauses passive income. Accrual should
-move to a single app-level ticker.
+`GameState` still stores cash as a `Double`. Beyond ~1e15 the integer part loses
+precision, and `Format.num`'s suffixes only go up to `Oc` (1e27). The new
+prestige multiplier makes numbers grow faster, which brings this ceiling
+closer but doesn't require hitting it yet at typical play lengths. A real fix
+needs a mantissa/exponent representation.
 
 ### 10. Offline earnings trust the system clock
-`GameState.computeOffline` clamps negative elapsed time to 0, but a player who
-moves the watch clock forward is credited up to the full 8-hour cap. Consider
-`System.getTimer`-based sanity checks or accepting it as harmless.
-
-### 11. Autosave interval is frame-counted, not time-based
-`MainView` saves every 500 frames (~20s at 40ms). If the timer is throttled the
-interval drifts. Should key off `System.getTimer()`.
-
-### 12. Save migration path is untested
-`GameState.load` versions the payload and ignores newer/unknown versions, which
-silently discards a future save on a downgrade. There is no migration function
-and no test for a v1 -> v2 upgrade.
-
-### 13. No automated tests
-Nothing covers `Format.num` (the trailing-zero stripping in particular), the
-upgrade cost curves, or offline-earnings clamping. Connect IQ supports unit tests
-via `(:test)` annotations and `monkeyc --unit-test`.
-
-### 14. Only venu2 is build-verified
-`manifest.xml` lists 11 products; only `venu2` (416x416, round) has been compiled
-and loaded. Square (venusq2) and smaller round (venu2s, 360x360) layouts use the
-same fractional positions and have not been checked — text may collide at 0.56h /
-0.645h on short screens.
+Unchanged: `GameState.computeOffline` clamps negative elapsed time to 0, but a
+forward-clock-set is still credited up to the 8h cap. Left as accepted risk —
+low value to exploit, and there's no tamper-resistant clock source available to
+a watch app.
 
 ### 15. Launcher icon is a placeholder
-`resources/drawables/launcher_icon.png` is a generated green circle at 70x70.
-Devices with other launcher icon sizes get a scaled copy.
+Still a generated flat green circle. Needs real art, not more code.
 
-### 16. Gesture handling has an untested fallback path
-`MainDelegate.onSwipe` exists for devices that report gestures without drag
-coordinates, and awards a fixed minimum-distance swipe. It is suppressed for
-400ms after a drag; that de-duplication window is a guess and has not been
-validated on hardware.
-
-### 17. No interactive verification on hardware or in the simulator
-The app compiles and loads in the venu2 simulator, but no gesture, purchase, or
-offline-claim flow has been exercised end to end.
+### 16. Gesture fallback path is untested
+`MainDelegate.onSwipe`'s device-without-drag-coordinates fallback and its 400ms
+de-duplication window against `onDrag` are unchanged and still unvalidated on
+real hardware.

@@ -7,7 +7,8 @@ using Toybox.Time;
 // All game numbers live here. Views never mutate state directly.
 class GameState {
 
-    static const SAVE_VERSION = 1;
+    // v1 -> v2: added "prestige". Old saves default it to 0 on load (see load()).
+    static const SAVE_VERSION = 2;
     static const SAVE_KEY = "save";
 
     // --- tuning ---------------------------------------------------------
@@ -34,6 +35,14 @@ class GameState {
     static const MILESTONES = [1000.0, 10000.0, 100000.0, 1000000.0,
                                10000000.0, 100000000.0, 1000000000.0];
 
+    // Mega-swipe upgrade unlocks once this many milestones have been hit.
+    static const CRIT_UNLOCK_MILESTONE_IDX = 1;   // i.e. after crossing $1,000
+
+    // Prestige requires this much lifetime cash, and grants +100% earnings
+    // per level (spec §14: "×2 permanent earnings" for the first prestige).
+    static const PRESTIGE_REQUIREMENT = 1000000.0;
+    static const PRESTIGE_BONUS_PER_LEVEL = 1.0;
+
     // --- persisted ------------------------------------------------------
     var cash          = 0.0;
     var lifetimeCash  = 0.0;
@@ -42,6 +51,7 @@ class GameState {
     var critLevel     = 0;
     var milestoneIdx  = 0;   // next milestone not yet celebrated
     var totalSwipes   = 0;
+    var prestigeLevel = 0;
     var lastSaveTime  = 0;
 
     // --- transient ------------------------------------------------------
@@ -55,8 +65,12 @@ class GameState {
     }
 
     // --- derived --------------------------------------------------------
+    function prestigeMultiplier() {
+        return 1.0 + PRESTIGE_BONUS_PER_LEVEL * prestigeLevel;
+    }
+
     function cashPerSwipe() {
-        return SWIPE_BASE * Math.pow(SWIPE_GROWTH, swipeLevel - 1);
+        return SWIPE_BASE * Math.pow(SWIPE_GROWTH, swipeLevel - 1) * prestigeMultiplier();
     }
 
     function swipeUpgradeCost() {
@@ -64,21 +78,25 @@ class GameState {
     }
 
     function nextCashPerSwipe() {
-        return SWIPE_BASE * Math.pow(SWIPE_GROWTH, swipeLevel);
+        return SWIPE_BASE * Math.pow(SWIPE_GROWTH, swipeLevel) * prestigeMultiplier();
     }
 
     function passiveIncome() {
         if (autoLevel <= 0) { return 0.0; }
-        return AUTO_BASE * autoLevel * Math.pow(AUTO_GROWTH, autoLevel - 1);
+        return AUTO_BASE * autoLevel * Math.pow(AUTO_GROWTH, autoLevel - 1) * prestigeMultiplier();
     }
 
     function nextPassiveIncome() {
         var l = autoLevel + 1;
-        return AUTO_BASE * l * Math.pow(AUTO_GROWTH, l - 1);
+        return AUTO_BASE * l * Math.pow(AUTO_GROWTH, l - 1) * prestigeMultiplier();
     }
 
     function autoUpgradeCost() {
         return AUTO_COST_BASE * Math.pow(AUTO_COST_MULT, autoLevel);
+    }
+
+    function critUnlocked() {
+        return milestoneIdx >= CRIT_UNLOCK_MILESTONE_IDX;
     }
 
     function critChance() {
@@ -102,10 +120,14 @@ class GameState {
         return 1.0;
     }
 
+    function canPrestige() {
+        return lifetimeCash >= PRESTIGE_REQUIREMENT;
+    }
+
     // --- actions --------------------------------------------------------
 
     // distanceFactor: 1.0 for a minimum swipe, up to ~1.25 for a long one.
-    // Returns { :amount, :crit, :streak, :milestone }
+    // Returns { :amount, :crit, :streak }
     function doSwipe(nowMs, distanceFactor) {
         if (nowMs - lastSwipeMs <= STREAK_WINDOW_MS) {
             streak++;
@@ -116,7 +138,7 @@ class GameState {
         totalSwipes++;
 
         var amount = cashPerSwipe() * streakMultiplier() * distanceFactor;
-        var crit = (Math.rand() % 1000) < (critChance() * 1000).toNumber();
+        var crit = critUnlocked() && (Math.rand() % 1000) < (critChance() * 1000).toNumber();
         if (crit) { amount = amount * CRIT_MULT; }
 
         addCash(amount);
@@ -169,10 +191,102 @@ class GameState {
     }
 
     function buyCritUpgrade() {
+        if (!critUnlocked()) { return false; }
         var c = critUpgradeCost();
         if (cash < c || critChance() >= CRIT_MAX) { return false; }
         cash -= c;
         critLevel++;
+        save();
+        return true;
+    }
+
+    static const MAX_BUY_STEPS = 200;   // guards against a runaway loop
+
+    // How many levels the current cash affords right now, and their total
+    // cost, without actually spending anything.
+    function affordableSwipeLevels() {
+        var levels = 0;
+        var spend = 0.0;
+        var probe = cash;
+        while (levels < MAX_BUY_STEPS) {
+            var c = SWIPE_COST_BASE * Math.pow(SWIPE_COST_MULT, swipeLevel + levels - 1);
+            if (probe < c) { break; }
+            probe -= c;
+            spend += c;
+            levels++;
+        }
+        return { :levels => levels, :cost => spend };
+    }
+
+    function affordableAutoLevels() {
+        var levels = 0;
+        var spend = 0.0;
+        var probe = cash;
+        while (levels < MAX_BUY_STEPS) {
+            var c = AUTO_COST_BASE * Math.pow(AUTO_COST_MULT, autoLevel + levels);
+            if (probe < c) { break; }
+            probe -= c;
+            spend += c;
+            levels++;
+        }
+        return { :levels => levels, :cost => spend };
+    }
+
+    // Buys as many swipe-value levels as the current cash affords in one go.
+    function buyMaxSwipeUpgrade() {
+        var plan = affordableSwipeLevels();
+        if (plan[:levels] <= 0) { return 0; }
+        cash -= plan[:cost];
+        swipeLevel += plan[:levels];
+        save();
+        return plan[:levels];
+    }
+
+    function buyMaxAutoUpgrade() {
+        var plan = affordableAutoLevels();
+        if (plan[:levels] <= 0) { return 0; }
+        cash -= plan[:cost];
+        autoLevel += plan[:levels];
+        save();
+        return plan[:levels];
+    }
+
+    function affordableCritLevels() {
+        var levels = 0;
+        var spend = 0.0;
+        var probe = cash;
+        var chance = critChance();
+        while (levels < MAX_BUY_STEPS && chance < CRIT_MAX) {
+            var c = CRIT_COST_BASE * Math.pow(CRIT_COST_MULT, critLevel + levels);
+            if (probe < c) { break; }
+            probe -= c;
+            spend += c;
+            levels++;
+            chance = CRIT_BASE + CRIT_STEP * (critLevel + levels);
+        }
+        return { :levels => levels, :cost => spend };
+    }
+
+    function buyMaxCritUpgrade() {
+        if (!critUnlocked()) { return 0; }
+        var plan = affordableCritLevels();
+        if (plan[:levels] <= 0) { return 0; }
+        cash -= plan[:cost];
+        critLevel += plan[:levels];
+        save();
+        return plan[:levels];
+    }
+
+    // Resets progress for a permanent earnings multiplier. Lifetime totals
+    // (used for stats and future milestone/prestige gating) are kept.
+    function doPrestige() {
+        if (!canPrestige()) { return false; }
+        prestigeLevel++;
+        cash = 0.0;
+        swipeLevel = 1;
+        autoLevel = 0;
+        critLevel = 0;
+        streak = 0;
         save();
         return true;
     }
@@ -195,15 +309,16 @@ class GameState {
     function save() {
         lastSaveTime = Time.now().value();
         Storage.setValue(SAVE_KEY, {
-            "v"     => SAVE_VERSION,
-            "cash"  => cash,
-            "life"  => lifetimeCash,
-            "swipe" => swipeLevel,
-            "auto"  => autoLevel,
-            "crit"  => critLevel,
-            "ms"    => milestoneIdx,
-            "n"     => totalSwipes,
-            "t"     => lastSaveTime
+            "v"        => SAVE_VERSION,
+            "cash"     => cash,
+            "life"     => lifetimeCash,
+            "swipe"    => swipeLevel,
+            "auto"     => autoLevel,
+            "crit"     => critLevel,
+            "ms"       => milestoneIdx,
+            "n"        => totalSwipes,
+            "prestige" => prestigeLevel,
+            "t"        => lastSaveTime
         });
     }
 
@@ -213,7 +328,10 @@ class GameState {
             lastSaveTime = Time.now().value();
             return;
         }
-        // Unknown/newer save versions are ignored rather than mis-read.
+        // A save from a *newer* app version is not read: we don't know what
+        // its fields mean. An *older* save (v < SAVE_VERSION) is migrated by
+        // pick()'s per-field fallbacks below, so every past version stays
+        // loadable going forward.
         var v = d.get("v");
         if (v == null || v > SAVE_VERSION) {
             lastSaveTime = Time.now().value();
@@ -226,6 +344,7 @@ class GameState {
         critLevel    = pick(d, "crit", 0).toNumber();
         milestoneIdx = pick(d, "ms", 0).toNumber();
         totalSwipes  = pick(d, "n", 0).toNumber();
+        prestigeLevel = pick(d, "prestige", 0).toNumber();   // absent pre-v2
         lastSaveTime = pick(d, "t", Time.now().value()).toNumber();
 
         computeOffline();

@@ -7,11 +7,14 @@ using Toybox.Math;
 
 class MainView extends WatchUi.View {
 
-    static const FRAME_MS = 40;
+    static const FRAME_MS = 50;   // 20fps: below this the platform clamps the timer anyway
+    // Swipe hint fades out once the player has clearly got it, and comes
+    // back if they step away for a while.
+    static const HINT_TEACH_SWIPES = 4;
+    static const HINT_RETURN_IDLE_FRAMES = 20 * 30;   // ~30s of inactivity at 20fps
 
     hidden var rain;
     hidden var timer;
-    hidden var lastTickMs = 0;
     hidden var idleFrames = 0;
 
     // floating "+$x" feedback
@@ -23,15 +26,12 @@ class MainView extends WatchUi.View {
     hidden var msText = null;
     hidden var msLife = 0;
 
-    hidden var saveCounter = 0;
-
     function initialize() {
         View.initialize();
         rain = new MoneyRain();
     }
 
     function onShow() {
-        lastTickMs = System.getTimer();
         timer = new Timer.Timer();
         timer.start(method(:onFrame), FRAME_MS, true);
     }
@@ -43,11 +43,6 @@ class MainView extends WatchUi.View {
 
     function onFrame() as Void {
         var now = System.getTimer();
-        var dt = now - lastTickMs;
-        if (dt < 0) { dt = FRAME_MS; }       // timer wrapped
-        lastTickMs = now;
-
-        $.gGame.accrue(dt / 1000.0);
 
         var busy = false;
         if (rain.isActive()) { rain.update(); busy = true; }
@@ -58,17 +53,15 @@ class MainView extends WatchUi.View {
         var m = $.gGame.takeMilestone();
         if (m != null) { showMilestone(m); busy = true; }
 
-        // Periodic autosave (~every 20s).
-        saveCounter++;
-        if (saveCounter >= 500) { saveCounter = 0; $.gGame.save(); }
-
         if (busy) {
             idleFrames = 0;
             WatchUi.requestUpdate();
         } else {
-            // Idle: refresh once a second so passive income still ticks up.
+            // Idle: refresh roughly once a second so the passive-income
+            // ticker (driven by MakeItRainApp) is still reflected on screen,
+            // and so the swipe hint can reappear after a long pause.
             idleFrames++;
-            if (idleFrames >= 25) { idleFrames = 0; WatchUi.requestUpdate(); }
+            if (idleFrames % 25 == 0) { WatchUi.requestUpdate(); }
         }
     }
 
@@ -76,6 +69,7 @@ class MainView extends WatchUi.View {
         msText = Format.cash(value);
         msLife = 45;
         vibe(100, 80);
+        tone(Attention has :TONE_KEY ? Attention.TONE_KEY : null);
     }
 
     // Called by the delegate after a qualifying swipe.
@@ -83,8 +77,12 @@ class MainView extends WatchUi.View {
         gainText = Format.gain(result[:amount]);
         gainCrit = result[:crit];
         gainLife = 14;
+        idleFrames = 0;
         rain.burst(x, y, gainCrit ? 12 : 6, gainCrit);
         vibe(gainCrit ? 75 : 25, gainCrit ? 120 : 40);
+        tone(gainCrit
+            ? (Attention has :TONE_LOUD_BEEP ? Attention.TONE_LOUD_BEEP : null)
+            : (Attention has :TONE_CLICK ? Attention.TONE_CLICK : null));
         WatchUi.requestUpdate();
     }
 
@@ -94,6 +92,17 @@ class MainView extends WatchUi.View {
                 Attention.vibrate([new Attention.VibeProfile(strength, duration)]);
             } catch (e) {
                 // Vibration unsupported or disabled; feedback is visual anyway.
+            }
+        }
+    }
+
+    hidden function tone(t) {
+        if (t == null) { return; }
+        if (Attention has :playTone) {
+            try {
+                Attention.playTone(t);
+            } catch (e) {
+                // Tone unsupported, muted by the system, or DND is on.
             }
         }
     }
@@ -156,7 +165,9 @@ class MainView extends WatchUi.View {
                         Graphics.TEXT_JUSTIFY_CENTER);
         }
 
-        drawSwipeHint(dc, w, h);
+        if (g.totalSwipes < HINT_TEACH_SWIPES || idleFrames >= HINT_RETURN_IDLE_FRAMES) {
+            drawSwipeHint(dc, w, h);
+        }
         drawEdgeHints(dc, w, h);
     }
 
@@ -176,13 +187,23 @@ class MainView extends WatchUi.View {
     }
 
     hidden function drawEdgeHints(dc, w, h) {
-        dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
-        // right edge -> upgrades
+        var g = $.gGame;
+        // A brighter dot means something on that screen can be bought right now.
+        var upgradeReady = g.cash >= g.swipeUpgradeCost()
+            || (g.critUnlocked() && g.cash >= g.critUpgradeCost());
+        var autoReady = g.cash >= g.autoUpgradeCost();
+
+        dc.setColor(upgradeReady ? Theme.ACCENT : Theme.MUTED, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w - 6, h / 2, Graphics.FONT_XTINY, "U",
                     Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER);
-        // left edge -> automation
+
+        dc.setColor(autoReady ? Theme.ACCENT : Theme.MUTED, Graphics.COLOR_TRANSPARENT);
         dc.drawText(6, h / 2, Graphics.FONT_XTINY, "A",
                     Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
+
+        dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.05, Graphics.FONT_XTINY, "S",
+                    Graphics.TEXT_JUSTIFY_CENTER);
     }
 
     hidden function drawMilestone(dc, w, h) {

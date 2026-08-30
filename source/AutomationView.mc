@@ -33,6 +33,12 @@ class AutomationView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
+    // Long-press: buy every level the current cash affords in one go.
+    function buyMax() {
+        flash = ($.gGame.buyMaxAutoUpgrade() > 0) ? 3 : -3;
+        WatchUi.requestUpdate();
+    }
+
     function onUpdate(dc) {
         var w = dc.getWidth();
         var h = dc.getHeight();
@@ -75,7 +81,9 @@ class AutomationView extends WatchUi.View {
         dc.setPenWidth(1);
 
         dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.88, Graphics.FONT_XTINY, Format.cash(g.cash),
+        dc.drawText(w / 2, h * 0.87, Graphics.FONT_XTINY, "hold to buy max",
+                    Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h * 0.95, Graphics.FONT_XTINY, Format.cash(g.cash),
                     Graphics.TEXT_JUSTIFY_CENTER);
     }
 }
@@ -91,6 +99,7 @@ class AutomationDelegate extends WatchUi.BehaviorDelegate {
 
     function onTap(evt)  { view.buy(); return true; }
     function onSelect()  { view.buy(); return true; }
+    function onHold(evt) { view.buyMax(); return true; }
 
     function onSwipe(evt) {
         if (evt.getDirection() == WatchUi.SWIPE_LEFT) {
