@@ -17,7 +17,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
 
     hidden function minSwipe(w) { return (w * 0.145).toNumber(); }   // ~60px on a 416px screen
     hidden function edge(w)     { return (w * 0.22).toNumber(); }
-    hidden function topEdge(h)  { return (h * 0.16).toNumber(); }
+    hidden function bottomEdge(h) { return (h * 0.84).toNumber(); }
 
     function onDrag(evt) {
         var c = evt.getCoordinates();
@@ -56,11 +56,11 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
             WatchUi.pushView(av, new AutomationDelegate(av), WatchUi.SLIDE_RIGHT);
             return true;
         }
-        // Starting within the top strip and pulling down opens Stats,
-        // without stealing ordinary downward money-swipes lower on screen.
-        if (sy <= topEdge(h) && dy >= minD && dy > dx.abs()) {
+        // Starting within the bottom strip and pulling up opens Stats,
+        // without stealing ordinary downward money-swipes higher on screen.
+        if (sy >= bottomEdge(h) && dy <= -minD && dy.abs() > dx.abs()) {
             var stv = new StatsView();
-            WatchUi.pushView(stv, new StatsDelegate(stv), WatchUi.SLIDE_DOWN);
+            WatchUi.pushView(stv, new StatsDelegate(stv), WatchUi.SLIDE_UP);
             return true;
         }
 

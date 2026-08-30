@@ -2,7 +2,7 @@ using Toybox.Graphics;
 using Toybox.WatchUi;
 using Toybox.Timer;
 
-// Progression + prestige. Reached by pulling down from the top of the
+// Progression + prestige. Reached by pulling up from the bottom of the
 // money screen (spec §8 assigns this slot to "Stats / Progression").
 class StatsView extends WatchUi.View {
 
@@ -165,7 +165,7 @@ class StatsDelegate extends WatchUi.BehaviorDelegate {
             return true;
         }
         if (evt.getDirection() == WatchUi.SWIPE_DOWN || evt.getDirection() == WatchUi.SWIPE_UP) {
-            WatchUi.popView(WatchUi.SLIDE_UP);
+            WatchUi.popView(WatchUi.SLIDE_DOWN);
         }
         return true;
     }
@@ -174,7 +174,7 @@ class StatsDelegate extends WatchUi.BehaviorDelegate {
         if (view.confirming) {
             view.cancelPrestige();
         } else {
-            WatchUi.popView(WatchUi.SLIDE_UP);
+            WatchUi.popView(WatchUi.SLIDE_DOWN);
         }
         return true;
     }

@@ -202,8 +202,8 @@ class MainView extends WatchUi.View {
                     Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
 
         dc.setColor(Theme.MUTED, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.05, Graphics.FONT_XTINY, "S",
-                    Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h * 0.95, Graphics.FONT_XTINY, "S",
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
     }
 
     hidden function drawMilestone(dc, w, h) {
