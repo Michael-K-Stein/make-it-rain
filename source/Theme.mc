@@ -6,6 +6,10 @@ module Theme {
     const CASH_DIM  = 0x008833;
     const MONEY     = 0x55FF88;
     const NOTE      = 0xAAFF00;
+    // Falling banknotes: a pale paper inset and a dark seal, layered on top
+    // of MONEY/NOTE/CRIT so every bill reads as a bill regardless of tint.
+    const NOTE_PAPER = 0xEFFFD9;
+    const NOTE_INK   = 0x114400;
     const POSITIVE  = 0xFFFFFF;
     const ACCENT    = 0x00AAFF;   // upgrades
     const CRIT      = 0xFFAA00;   // gold
